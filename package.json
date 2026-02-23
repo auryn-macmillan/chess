@@ -1,0 +1,18 @@
+{
+  "name": "chess-contract",
+  "version": "1.0.0",
+  "description": "Chess smart contract",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test"
+  },
+  "keywords": ["chess", "solidity", "ethereum", "smart-contract"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.0"
+  }
+}
