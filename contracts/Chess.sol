@@ -50,7 +50,7 @@ contract Chess {
         gameTimeControl[gameId] = _timeControl;
         gameWhiteTime[gameId] = _timeControl;
         gameBlackTime[gameId] = _timeControl;
-        gameBoards[gameId] = _initialBoard();
+        gameBoards[gameId] = INITIAL_BOARD;
         gameEnPassantSquare[gameId] = 255;
         gameCastlingRights[gameId] = 0x0F;
         maxHalfMovesWithoutCapture[gameId] = _maxHalfMovesWithoutCapture;
@@ -73,7 +73,7 @@ contract Chess {
         gameTimeControl[gameId] = _timeControl;
         gameWhiteTime[gameId] = _timeControl;
         gameBlackTime[gameId] = _timeControl;
-        gameBoards[gameId] = _initialBoard();
+        gameBoards[gameId] = INITIAL_BOARD;
         gameEnPassantSquare[gameId] = 255;
         gameCastlingRights[gameId] = 0x0F;
         maxHalfMovesWithoutCapture[gameId] = 0;
@@ -83,20 +83,7 @@ contract Chess {
         return gameId;
     }
 
-    function _initialBoard() internal pure returns (bytes32) {
-        bytes32 board;
-        board = _setPiece(board, 0, 4);  board = _setPiece(board, 1, 2);
-        board = _setPiece(board, 2, 3);  board = _setPiece(board, 3, 5);
-        board = _setPiece(board, 4, 6);  board = _setPiece(board, 5, 3);
-        board = _setPiece(board, 6, 2);  board = _setPiece(board, 7, 4);
-        for (uint8 i = 8; i < 16; i++) board = _setPiece(board, i, 1);
-        for (uint8 i = 48; i < 56; i++) board = _setPiece(board, i, 7);
-        board = _setPiece(board, 56, 10); board = _setPiece(board, 57, 8);
-        board = _setPiece(board, 58, 9);  board = _setPiece(board, 59, 11);
-        board = _setPiece(board, 60, 12); board = _setPiece(board, 61, 9);
-        board = _setPiece(board, 62, 8);  board = _setPiece(board, 63, 10);
-        return board;
-    }
+    bytes32 public constant INITIAL_BOARD = bytes32(hex"a89cb98a77777777000000000000000000000000000000001111111142365324");
 
     function _setPiece(bytes32 _board, uint8 _square, uint8 _piece) internal pure returns (bytes32) {
         uint8 shift = _square * 4;
@@ -443,8 +430,15 @@ contract Chess {
             return;
         }
         
-        uint8 nextPlayer = gameCurrentPlayer[_gameId];
+        // Check insufficient material
         bytes32 board = gameBoards[_gameId];
+        if (_isInsufficientMaterial(board)) {
+            gameStates[_gameId] = GameState.DRAW;
+            emit GameEnded(_gameId, GameState.DRAW);
+            return;
+        }
+        
+        uint8 nextPlayer = gameCurrentPlayer[_gameId];
         bool hasLegalMove = false;
         for (uint8 from = 0; from < 64 && !hasLegalMove; from++) {
             uint8 fromPiece = _getPiece(board, from);
@@ -557,5 +551,64 @@ contract Chess {
 
     function getGameState(uint256 _gameId) external view returns (bytes32 board, uint8 currentPlayer, uint8 enPassantSquare, uint8 castlingRights, GameState state) {
         return (gameBoards[_gameId], gameCurrentPlayer[_gameId], gameEnPassantSquare[_gameId], gameCastlingRights[_gameId], gameStates[_gameId]);
+    }
+
+    function _isInsufficientMaterial(bytes32 _board) internal pure returns (bool) {
+        uint8 whiteKnights = 0;
+        uint8 whiteBishops = 0;
+        uint8 whiteRooks = 0;
+        uint8 whiteQueens = 0;
+        uint8 whitePawns = 0;
+        uint8 blackKnights = 0;
+        uint8 blackBishops = 0;
+        uint8 blackRooks = 0;
+        uint8 blackQueens = 0;
+        uint8 blackPawns = 0;
+        uint8 whiteBishopSquareColor = 255;
+        uint8 blackBishopSquareColor = 255;
+        
+        for (uint8 i = 0; i < 64; i++) {
+            uint8 piece = _getPiece(_board, i);
+            if (piece == 0) continue;
+            uint8 pt = _pieceType(piece);
+            if (pt == 1) {
+                if (_isWhite(piece)) whitePawns++;
+                else blackPawns++;
+            } else if (pt == 2) {
+                if (_isWhite(piece)) whiteKnights++;
+                else blackKnights++;
+            } else if (pt == 3) {
+                uint8 squareColor = ((i / 8) + (i % 8)) % 2;
+                if (_isWhite(piece)) {
+                    whiteBishops++;
+                    whiteBishopSquareColor = squareColor;
+                } else {
+                    blackBishops++;
+                    blackBishopSquareColor = squareColor;
+                }
+            } else if (pt == 4) {
+                if (_isWhite(piece)) whiteRooks++;
+                else blackRooks++;
+            } else if (pt == 5) {
+                if (_isWhite(piece)) whiteQueens++;
+                else blackQueens++;
+            }
+        }
+        
+        if (whitePawns > 0 || blackPawns > 0) return false;
+        if (whiteRooks > 0 || blackRooks > 0) return false;
+        if (whiteQueens > 0 || blackQueens > 0) return false;
+        
+        uint8 whiteMinor = whiteKnights + whiteBishops;
+        uint8 blackMinor = blackKnights + blackBishops;
+        
+        if (whiteMinor == 0 && blackMinor == 0) return true;
+        if (whiteMinor == 0 && blackMinor == 1) return true;
+        if (whiteMinor == 1 && blackMinor == 0) return true;
+        if (whiteMinor == 1 && blackMinor == 1) {
+            if (whiteBishops == 1 && blackBishops == 1 && whiteBishopSquareColor == blackBishopSquareColor) return true;
+        }
+        
+        return false;
     }
 }
