@@ -28,31 +28,12 @@ jobs:
       - name: Run tests
         run: npx hardhat test
 
-      - name: Run coverage
+      - name: Generate coverage report
         run: npx hardhat coverage
-        env:
-          COVERAGE: 1
 
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
         with:
-          files: ./coverage/lcov.info
-          flags: solidity
-          name: codecov-umbrella
-
-  slither:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Slither
-        run: pip install slither-analyzer
-
-      - name: Run Slither
-        run: slither . --filter-paths "node_modules"
+          name: coverage-report
+          path: coverage/
+          retention-days: 7

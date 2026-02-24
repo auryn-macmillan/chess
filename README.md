@@ -1,7 +1,6 @@
 # Chess Smart Contract
 
 [![Tests](https://github.com/auryn-macmillan/chess/actions/workflows/tests.yml/badge.svg)](https://github.com/auryn-macmillan/chess/actions/workflows/tests.yml)
-[![Coverage](https://codecov.io/gh/auryn-macmillan/chess/branch/main/graph/badge.svg)](https://codecov.io/gh/auryn-macmillan/chess)
 
 A production-ready, fully-featured chess smart contract implemented in Solidity. Play chess on-chain with complete rule enforcement, time controls, and tournament-standard draw conditions.
 
