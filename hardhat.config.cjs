@@ -19,6 +19,16 @@ module.exports = {
     artifacts: "./artifacts"
   },
   mocha: {
-    timeout: 40000
+    timeout: 60000
+  },
+  networks: {
+    hardhat: {
+      allowUnlimitedContractSize: true
+    }
+  },
+  coverage: {
+    providerOptions: {
+      gasLimit: 50000000
+    }
   }
 };

@@ -83,6 +83,37 @@ contract Chess {
         return gameId;
     }
 
+    function createGameWithCustomSetup(
+        address _whitePlayer,
+        address _blackPlayer,
+        bytes32 _board,
+        uint8 _castlingRights,
+        uint256 _timeControl,
+        uint256 _maxHalfMovesWithoutCapture
+    ) external returns (uint256) {
+        require(_whitePlayer != address(0), "Invalid white player address");
+        require(_blackPlayer != address(0), "Invalid black player address");
+        require(_whitePlayer != _blackPlayer, "Players cannot be the same");
+        uint256 gameId = nextGameId++;
+        
+        gameCreators[gameId] = _whitePlayer;
+        gameOpponents[gameId] = _blackPlayer;
+        gameCurrentPlayer[gameId] = 0;
+        gameStates[gameId] = GameState.PENDING;
+        gameMoveCounts[gameId] = 0;
+        gameTimeControl[gameId] = _timeControl;
+        gameWhiteTime[gameId] = _timeControl;
+        gameBlackTime[gameId] = _timeControl;
+        gameBoards[gameId] = _board;
+        gameEnPassantSquare[gameId] = 255;
+        gameCastlingRights[gameId] = _castlingRights;
+        maxHalfMovesWithoutCapture[gameId] = _maxHalfMovesWithoutCapture;
+        halfMovesWithoutCapture[gameId] = 0;
+        
+        emit GameCreated(_whitePlayer, _blackPlayer, gameId, _timeControl, _maxHalfMovesWithoutCapture);
+        return gameId;
+    }
+
     bytes32 public constant INITIAL_BOARD = bytes32(hex"a89cb98a77777777000000000000000000000000000000001111111142365324");
 
     function _setPiece(bytes32 _board, uint8 _square, uint8 _piece) internal pure returns (bytes32) {
@@ -439,17 +470,7 @@ contract Chess {
         }
         
         uint8 nextPlayer = gameCurrentPlayer[_gameId];
-        bool hasLegalMove = false;
-        for (uint8 from = 0; from < 64 && !hasLegalMove; from++) {
-            uint8 fromPiece = _getPiece(board, from);
-            if (fromPiece == 0 || _pieceColor(fromPiece) != nextPlayer) continue;
-            for (uint8 to = 0; to < 64 && !hasLegalMove; to++) {
-                if (from == to) continue;
-                uint8 toPiece = _getPiece(board, to);
-                if (_isSameColor(fromPiece, toPiece)) continue;
-                if (_isLegalMove(_gameId, board, from, to, fromPiece, toPiece, nextPlayer)) hasLegalMove = true;
-            }
-        }
+        bool hasLegalMove = _hasAnyLegalMove(board, nextPlayer);
         if (!hasLegalMove) {
             if (_isKingInCheck(board, nextPlayer)) {
                 gameStates[_gameId] = nextPlayer == 0 ? GameState.BLACK_WON : GameState.WHITE_WON;
@@ -458,6 +479,93 @@ contract Chess {
             }
             emit GameEnded(_gameId, gameStates[_gameId]);
         }
+    }
+
+    function _hasAnyLegalMove(bytes32 _board, uint8 _player) internal view returns (bool) {
+        uint8 kingSquare = _findKing(_board, _player);
+        if (kingSquare == 255) return false;
+        
+        for (int8 f = -1; f <= 1; f++) {
+            for (int8 r = -1; r <= 1; r++) {
+                if (f == 0 && r == 0) continue;
+                int8 toFile = int8(kingSquare % 8) + f;
+                int8 toRank = int8(kingSquare / 8) + r;
+                if (toFile < 0 || toFile > 7 || toRank < 0 || toRank > 7) continue;
+                uint8 to = uint8(toRank * 8 + toFile);
+                uint8 toPiece = _getPiece(_board, to);
+                if (_isSameColor(_player == 0 ? 6 : 12, toPiece)) continue;
+                bytes32 newBoard = _simulateMove(_board, kingSquare, to, _player == 0 ? 6 : 12, _player, 0);
+                if (!_isKingInCheck(newBoard, _player)) return true;
+            }
+        }
+        
+        uint8 kingAttackers = _countAttackers(_board, kingSquare, 1 - _player);
+        if (kingAttackers > 1) return false;
+        if (kingAttackers == 1) {
+            for (uint8 attacker = 0; attacker < 64; attacker++) {
+                uint8 piece = _getPiece(_board, attacker);
+                if (piece == 0 || _pieceColor(piece) != _player) continue;
+                uint8 pieceT = _pieceType(piece);
+                if (pieceT == 6 && attacker == kingSquare) continue;
+                
+                int8 df = int8(attacker % 8) - int8(kingSquare % 8);
+                int8 dr = int8(attacker / 8) - int8(kingSquare / 8);
+                
+                bool canCapture = false;
+                if (pieceT == 1) {
+                    int8 direction = _player == 0 ? int8(1) : int8(-1);
+                    if (abs(df) == 1 && dr == direction) canCapture = true;
+                } else if (pieceT == 2) {
+                    int8 adf = abs(df);
+                    int8 adr = abs(dr);
+                    if ((adf == 1 && adr == 2) || (adf == 2 && adr == 1)) canCapture = true;
+                } else if (pieceT == 3) {
+                    if (abs(df) == abs(dr) && df != 0 && _isPathClear(_board, attacker, kingSquare, int8(kingSquare % 8) - int8(attacker % 8), int8(kingSquare / 8) - int8(attacker / 8))) canCapture = true;
+                } else if (pieceT == 4) {
+                    if ((df == 0 || dr == 0) && (df != 0 || dr != 0) && _isPathClear(_board, attacker, kingSquare, int8(kingSquare % 8) - int8(attacker % 8), int8(kingSquare / 8) - int8(attacker / 8))) canCapture = true;
+                } else if (pieceT == 5) {
+                    if ((df == 0 || dr == 0 || abs(df) == abs(dr)) && _isPathClear(_board, attacker, kingSquare, int8(kingSquare % 8) - int8(attacker % 8), int8(kingSquare / 8) - int8(attacker / 8))) canCapture = true;
+                } else if (pieceT == 6) {
+                    if (abs(df) <= 1 && abs(dr) <= 1 && (abs(df) != 0 || abs(dr) != 0)) canCapture = true;
+                }
+                
+                if (canCapture) {
+                    uint8 to = kingSquare;
+                    bytes32 newBoard = _simulateMove(_board, attacker, to, piece, _player, 0);
+                    if (!_isKingInCheck(newBoard, _player)) return true;
+                }
+            }
+            return false;
+        }
+        return true;
+    }
+
+    function _countAttackers(bytes32 _board, uint8 _target, uint8 _attacker) internal view returns (uint8) {
+        uint8 count = 0;
+        for (uint8 i = 0; i < 64; i++) {
+            uint8 piece = _getPiece(_board, i);
+            if (piece == 0) continue;
+            if (_pieceColor(piece) != _attacker) continue;
+            uint8 pieceT = _pieceType(piece);
+            int8 df = int8(_target % 8) - int8(i % 8);
+            int8 dr = int8(_target / 8) - int8(i / 8);
+            if (pieceT == 1) {
+                int8 direction = _attacker == 0 ? int8(1) : int8(-1);
+                if (abs(df) == 1 && dr == direction) count++;
+            } else if (pieceT == 2) {
+                if (_validateKnightMove(df, dr)) count++;
+            } else if (pieceT == 3) {
+                if (abs(df) == abs(dr) && df != 0 && _isPathClear(_board, i, _target, df, dr)) count++;
+            } else if (pieceT == 4) {
+                if ((df == 0 || dr == 0) && (df != 0 || dr != 0) && _isPathClear(_board, i, _target, df, dr)) count++;
+            } else if (pieceT == 5) {
+                if ((df == 0 || dr == 0 || abs(df) == abs(dr)) && _isPathClear(_board, i, _target, df, dr)) count++;
+            } else if (pieceT == 6) {
+                if (abs(df) <= 1 && abs(dr) <= 1) count++;
+            }
+            if (count >= 2) return count;
+        }
+        return count;
     }
 
     function _isLegalMove(uint256 _gameId, bytes32 _board, uint8 _from, uint8 _to, uint8 _fromPiece, uint8 _toPiece, uint8 _player) internal view returns (bool) {
@@ -553,6 +661,27 @@ contract Chess {
         return (gameBoards[_gameId], gameCurrentPlayer[_gameId], gameEnPassantSquare[_gameId], gameCastlingRights[_gameId], gameStates[_gameId]);
     }
 
+    // Test helper function - for testing only
+    function setBoard(uint256 _gameId, bytes32 _board) external {
+        require(msg.sender == gameCreators[_gameId], "Not creator");
+        gameBoards[_gameId] = _board;
+    }
+
+    function setGameState(uint256 _gameId, bytes32 _board, uint8 _castling, uint8 _currentPlayer) external {
+        require(msg.sender == gameCreators[_gameId], "Not creator");
+        gameBoards[_gameId] = _board;
+        gameCastlingRights[_gameId] = _castling;
+        gameCurrentPlayer[_gameId] = _currentPlayer;
+    }
+
+    function checkInsufficientMaterial(bytes32 _board) external pure returns (bool) {
+        return _isInsufficientMaterial(_board);
+    }
+
+    function getPieceColor(uint8 _piece) external pure returns (uint8) {
+        return _pieceColor(_piece);
+    }
+
     function _isInsufficientMaterial(bytes32 _board) internal pure returns (bool) {
         uint8 whiteKnights = 0;
         uint8 whiteBishops = 0;
@@ -610,5 +739,32 @@ contract Chess {
         }
         
         return false;
+    }
+
+    function testCastlingRookMove(bytes32 _board, uint8 _player, bool _kingside) external pure returns (bytes32) {
+        uint8 rank = _player == 0 ? 0 : 7;
+        uint8 rookFrom = rank * 8 + (_kingside ? 7 : 0);
+        uint8 rookTo = rank * 8 + (_kingside ? 5 : 3);
+        uint8 rookPiece = _player == 0 ? 4 : 10;
+        bytes32 newBoard = _setPiece(_board, rookFrom, 0);
+        newBoard = _setPiece(newBoard, rookTo, rookPiece);
+        return newBoard;
+    }
+
+    function testSimulateMove(bytes32 _board, uint8 _from, uint8 _to, uint8 _fromPiece, uint8 _player, uint8 _special) external pure returns (bytes32) {
+        return _simulateMove(_board, _from, _to, _fromPiece, _player, _special);
+    }
+
+    function testExecuteMovePromotion(bytes32 _board, uint8 _from, uint8 _to, uint8 _fromPiece, uint8 _player, uint8 _promo) external pure returns (bytes32) {
+        bytes32 newBoard = _board;
+        uint8 pieceT = _pieceType(_fromPiece);
+        if (_promo >= 2 && _promo <= 5) {
+            uint8 promotedPiece = _player == 0 ? _promo : _promo + 6;
+            newBoard = _setPiece(newBoard, _to, promotedPiece);
+        } else {
+            newBoard = _setPiece(newBoard, _to, _fromPiece);
+        }
+        newBoard = _setPiece(newBoard, _from, 0);
+        return newBoard;
     }
 }
