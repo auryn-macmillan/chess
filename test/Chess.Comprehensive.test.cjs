@@ -443,14 +443,10 @@ describe("Chess Contract - Comprehensive Tests", function () {
       // Castling rights = 1 means white kingside allowed
       await chess.connect(player1).setGameState(gameId, board, 1, 0);
       
-      const before = await chess.getBoard(gameId);
-      console.log('Before:', before);
-      
       // Castling: king e1->g1 (4->6)
       await chess.connect(player1).makeMove(gameId, 4, 6);
       
       const after = await chess.getBoard(gameId);
-      console.log('After:', after);
       
       // Verify rook moved from h1 to f1
       expect(after).to.equal("0x000c000000000000000000000000000000000000000000000000000006400000");
